@@ -9,12 +9,19 @@ token.json
 *.key
 
 # ===== DATA FILES =====
-# CSV data files (contain actual monitoring data)
+# CSV data files in root directory
 *.csv
 !*_template.csv
 
+# CSV data files in data/ subfolder
+data/*.csv
+data/**/*.csv
+
 # Backup files
 *_backup_*.csv
+
+# Keep the data directory structure but ignore contents
+!data/.gitkeep
 
 # ===== PYTHON =====
 # Byte-compiled / optimized / DLL files

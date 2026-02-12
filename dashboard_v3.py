@@ -111,7 +111,7 @@ def run_data_collection(start_date, end_date, days_back=None):
     """
     try:
         # Prepare the script path
-        script_path = "script_v2.py"
+        script_path = "monitoring_data_scrap.py"
 
         if not os.path.exists(script_path):
             return False, f"Script not found: {script_path}", None
@@ -554,13 +554,19 @@ def main():
     )
 
     # File selectors based on granularity
-    # Try to find the most recent dated file first
+    # Try to find the most recent dated file (check both data/ and current directory)
     if granularity == 'hourly':
-        latest_file = find_latest_csv("*_utilihive_metrics_hourly.csv")
-        default_csv = latest_file if latest_file else "utilihive_metrics_hourly.csv"
+        # Try data/ subfolder first, then current directory
+        latest_file = find_latest_csv("data/*_utilihive_metrics_hourly.csv")
+        if not latest_file:
+            latest_file = find_latest_csv("*_utilihive_metrics_hourly.csv")
+        default_csv = latest_file if latest_file else "data/utilihive_metrics_hourly.csv"
     else:
-        latest_file = find_latest_csv("*_utilihive_metrics_daily.csv")
-        default_csv = latest_file if latest_file else "utilihive_metrics_daily.csv"
+        # Try data/ subfolder first, then current directory
+        latest_file = find_latest_csv("data/*_utilihive_metrics_daily.csv")
+        if not latest_file:
+            latest_file = find_latest_csv("*_utilihive_metrics_daily.csv")
+        default_csv = latest_file if latest_file else "data/utilihive_metrics_daily.csv"
 
     csv_file = st.sidebar.text_input(
         "CSV File Path",
@@ -583,7 +589,7 @@ def main():
     if df is None:
         st.error(f"❌ Could not find CSV file: {csv_file}")
         st.info("💡 Click the '🔄 Refresh Data' button to collect new data!")
-        st.info("Or make sure to run the data collection script first: `python script_v2.py`")
+        st.info("Or make sure to run the data collection script first")
         return
 
     # Load flow list

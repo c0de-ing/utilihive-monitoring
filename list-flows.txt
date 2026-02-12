@@ -1,0 +1,10 @@
+community-sftp-forward-handoff
+community-sftp-read
+innosolv-sftp-connect
+lgz-inbound-queue-sub
+mdm-outbound-rest-api
+robotron-sftp-connect-handoff
+robotron-sftp-read
+vgt-reading-splitter-handoff
+vgt-sftp-forward-handoff
+webgis-event-handoff
