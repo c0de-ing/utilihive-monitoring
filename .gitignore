@@ -8,6 +8,9 @@ token.json
 *.pem
 *.key
 
+# Authentication documentation (may contain sensitive setup info)
+AUTHENTICATION_GUIDE.md
+
 # ===== DATA FILES =====
 # CSV data files in root directory
 *.csv
