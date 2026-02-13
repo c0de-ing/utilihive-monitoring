@@ -36,7 +36,7 @@ DAYS_BACK = 2  # How many days back to fetch data from today
 TIMEZONE_OFFSET_HOURS = 1  # UTC+1 for CET (winter) or 2 for CEST (summer)
 
 # Rate limiting configuration
-REQUEST_DELAY_SECONDS = 0.1  # Delay between API requests to avoid rate limiting
+REQUEST_DELAY_SECONDS = 0.05  # Delay between API requests to avoid rate limiting
 
 
 # ===== TOKEN MANAGEMENT =====

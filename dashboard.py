@@ -16,6 +16,7 @@ import sys
 import time
 import json
 import base64
+import hashlib
 
 # Page configuration
 st.set_page_config(
@@ -119,7 +120,7 @@ def run_data_collection(start_date, end_date, days_back=None):
         # Build command
         cmd = [sys.executable, script_path]
 
-        # Set environment variables for date range
+        # Set environment variables for date range and token
         env = os.environ.copy()
         if start_date and end_date:
             env['START_DATE'] = start_date.strftime('%Y-%m-%d')
@@ -127,6 +128,10 @@ def run_data_collection(start_date, end_date, days_back=None):
         elif days_back:
             # Let the script use DAYS_BACK from config
             pass
+
+        # Pass token via environment variable
+        if st.session_state.token_data and 'token' in st.session_state.token_data:
+            env['API_TOKEN'] = st.session_state.token_data['token']
 
         # Run the script
         process = subprocess.Popen(
@@ -378,6 +383,63 @@ def create_success_by_flow_chart(df, granularity='daily', log_scale=False):
     return fig
 
 
+# ==================== AUTHENTICATION ====================
+
+def check_password():
+    """Returns `True` if the user had a correct password."""
+
+    def hash_password(password):
+        """Hash a password for storing."""
+        return hashlib.sha256(password.encode()).hexdigest()
+
+    # Load credentials from secrets or use defaults
+    try:
+        # Try to load from Streamlit secrets (for deployment)
+        credentials = st.secrets.get("credentials", {})
+        USERS = credentials.get("users", {"admin": "admin"})
+    except:
+        # Default credentials for local development
+        USERS = {
+            "admin": "admin",  # Change these!
+            "user": "password"
+        }
+
+    # Hash the user database (only hash values, not keys)
+    USERS_HASHED = {username: hash_password(pwd) for username, pwd in USERS.items()}
+
+    def password_entered():
+        """Checks whether a password entered by the user is correct."""
+        username = st.session_state["username"]
+        password = st.session_state["password"]
+
+        if username in USERS_HASHED and USERS_HASHED[username] == hash_password(password):
+            st.session_state["authenticated"] = True
+            st.session_state["current_user"] = username
+            del st.session_state["password"]  # Don't store password
+        else:
+            st.session_state["authenticated"] = False
+
+    # Check if already authenticated
+    if st.session_state.get("authenticated", False):
+        return True
+
+    # Show login form
+    st.markdown("# 🔐 UtiliHive Monitoring Login")
+    st.markdown("Please enter your credentials to access the dashboard.")
+
+    col1, col2, col3 = st.columns([1, 2, 1])
+
+    with col2:
+        st.text_input("Username", key="username", placeholder="Enter your username")
+        st.text_input("Password", type="password", key="password", placeholder="Enter your password")
+        st.button("Login", on_click=password_entered, type="primary", use_container_width=True)
+
+        if "authenticated" in st.session_state and not st.session_state["authenticated"]:
+            st.error("😕 Username or password incorrect")
+
+    return False
+
+
 def main():
     # Header
     st.title("📊 UtiliHive Metrics Dashboard V3")
@@ -386,34 +448,51 @@ def main():
     # Sidebar
     st.sidebar.header("⚙️ Configuration")
 
+    # User info and logout
+    if st.session_state.get("current_user"):
+        st.sidebar.markdown(f"👤 **Logged in as:** {st.session_state['current_user']}")
+        if st.sidebar.button("🚪 Logout", use_container_width=True):
+            st.session_state["authenticated"] = False
+            st.session_state["current_user"] = None
+            st.rerun()
+        st.sidebar.markdown("---")
+
     # ========== TOKEN MANAGEMENT SECTION ==========
     st.sidebar.subheader("🔑 Authentication Token")
 
-    # Check if token exists
-    token_file = "token.json"
-    token_exists = os.path.exists(token_file)
+    # Initialize session state for token
+    if 'token_data' not in st.session_state:
+        st.session_state.token_data = None
 
-    if token_exists:
-        try:
-            with open(token_file, 'r') as f:
-                token_data = json.load(f)
+        # Try to load from file (for local use only)
+        token_file = "token.json"
+        if os.path.exists(token_file):
+            try:
+                with open(token_file, 'r') as f:
+                    st.session_state.token_data = json.load(f)
+            except:
+                pass
 
-            if 'expires_at' in token_data:
+    # Check token status
+    if st.session_state.token_data:
+        token_data = st.session_state.token_data
+        if 'expires_at' in token_data:
+            try:
                 expires_at = datetime.fromisoformat(token_data['expires_at'])
                 if datetime.now() >= expires_at:
                     st.sidebar.warning("⚠️ Token expired!")
                 else:
                     time_left = expires_at - datetime.now()
                     st.sidebar.success(f"✅ Token valid ({time_left.days}d {time_left.seconds//3600}h left)")
-            else:
+            except:
                 st.sidebar.info("ℹ️ Token loaded")
-        except:
-            st.sidebar.info("ℹ️ Token file exists")
+        else:
+            st.sidebar.info("ℹ️ Token loaded")
     else:
         st.sidebar.warning("⚠️ No token found")
 
     # Token input expander
-    with st.sidebar.expander("📝 Paste New Token"):
+    with st.sidebar.expander("📝 Paste New Token", expanded=not st.session_state.token_data):
         st.markdown("Get your token from [UtiliHive Console](https://console.ch.utilihive.io)")
         st.markdown("**Steps:**")
         st.markdown("1. Open browser DevTools (F12)")
@@ -460,12 +539,17 @@ def main():
                             if 'sub' in payload_data:
                                 token_data['user'] = payload_data['sub']
 
-                            # Save to file
-                            with open(token_file, 'w') as f:
-                                json.dump(token_data, f, indent=2)
+                            # Save to session state (works on Streamlit Cloud)
+                            st.session_state.token_data = token_data
+
+                            # Also try to save to file (for local use)
+                            try:
+                                with open("token.json", 'w') as f:
+                                    json.dump(token_data, f, indent=2)
+                            except:
+                                pass  # Fails on Streamlit Cloud, but that's OK
 
                             st.success("✅ Token saved successfully!")
-                            st.info("🔄 Refresh the page to use the new token")
                             st.rerun()
                         else:
                             st.error("❌ Invalid token format (not a valid JWT)")
@@ -554,29 +638,42 @@ def main():
     )
 
     # File selectors based on granularity
-    # Try to find the most recent dated file (check both data/ and current directory)
+    # Get all available CSV files based on granularity
     if granularity == 'hourly':
-        # Try data/ subfolder first, then current directory
-        latest_file = find_latest_csv("data/*_utilihive_metrics_hourly.csv")
-        if not latest_file:
-            latest_file = find_latest_csv("*_utilihive_metrics_hourly.csv")
-        default_csv = latest_file if latest_file else "data/utilihive_metrics_hourly.csv"
+        # Find all hourly files in both data/ and root
+        files_in_data = glob.glob("data/*_utilihive_metrics_hourly.csv")
+        files_in_root = glob.glob("*_utilihive_metrics_hourly.csv")
+        all_files = files_in_data + files_in_root
     else:
-        # Try data/ subfolder first, then current directory
-        latest_file = find_latest_csv("data/*_utilihive_metrics_daily.csv")
-        if not latest_file:
-            latest_file = find_latest_csv("*_utilihive_metrics_daily.csv")
-        default_csv = latest_file if latest_file else "data/utilihive_metrics_daily.csv"
+        # Find all daily files in both data/ and root
+        files_in_data = glob.glob("data/*_utilihive_metrics_daily.csv")
+        files_in_root = glob.glob("*_utilihive_metrics_daily.csv")
+        all_files = files_in_data + files_in_root
 
-    csv_file = st.sidebar.text_input(
-        "CSV File Path",
-        value=default_csv,
-        help="Automatically loads the most recent dated file"
+    # Sort files by name (newest first due to date prefix)
+    all_files.sort(reverse=True)
+
+    # Set default to most recent file
+    if all_files:
+        default_csv = all_files[0]
+    else:
+        default_csv = "data/utilihive_metrics_hourly.csv" if granularity == 'hourly' else "data/utilihive_metrics_daily.csv"
+        all_files = [default_csv]  # Add placeholder
+
+    # Create dropdown selector
+    csv_file = st.sidebar.selectbox(
+        "📁 Select CSV File",
+        options=all_files,
+        index=0 if default_csv in all_files else 0,
+        help="Select from available CSV files"
     )
 
-    # Show which file was auto-selected
-    if latest_file:
-        st.sidebar.info(f"📅 Auto-selected latest file")
+    # Show file info
+    if os.path.exists(csv_file):
+        file_size = os.path.getsize(csv_file) / 1024  # KB
+        st.sidebar.success(f"✅ File loaded ({file_size:.1f} KB)")
+    else:
+        st.sidebar.warning(f"⚠️ File not found")
 
     flow_list_file = st.sidebar.text_input(
         "Flow List File",
@@ -786,4 +883,6 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    # Check authentication first
+    if check_password():
+        main()
